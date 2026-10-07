@@ -80,3 +80,18 @@ O teste com a reunião de 2 h na 0.1.0 mostrou o modelo copiando a transcrição
 - Ícone novo (era da 0.1.1).
 
 Arquivos: `project.yml`, `LEIA-ME.md`, `App/Motor/MotorLLM.h`, `MotorLLM.c`, `MotorLLM.swift`, `Transcricao.swift`, `App/Telas/TesteView.swift`, `App/Assets.xcassets/AppIcon.appiconset/icone.png`.
+
+## 0.1.3
+
+Os testes da 0.1.2 mostraram: a reunião de 2 h não cabe num contexto só neste iPhone (24 mil falha ao ler; comprimido roda, lento, e inventou prazos), e as anotações por bloco estouravam o limite e cobriam só 30% da reunião. Mudou:
+
+- Um caminho só: blocos de até 3 mil tokens, anotados por assunto (máximo 10 linhas), depois resumo.
+- Cada anotação tem tipo (COMBINADO, PENDENCIA, NUMERO, ASSUNTO) e a frase copiada da transcrição.
+- **Combinados e pendências são montados pelo app**, só com os que têm a frase achada na transcrição. Os outros vão para "Não confirmados". O modelo escreve só Resumo e Assuntos.
+- Campo de tipo de reunião e de "quem é quem", que entram no pedido.
+- Exemplo novo: uma daily curta com combinados e pendências conhecidos.
+- Erros do motor aparecem com o código real, sem o chute de "falta de memória".
+- Saíram contexto de 24/32 mil, contexto comprimido e o modo "tudo de uma vez". Botões do card Transcrição não quebram mais linha.
+- A resposta traz, no fim, as anotações brutas do modelo, para conferência nesta fase de teste.
+
+Arquivos (desde a 0.1.2): `project.yml`, `LEIA-ME.md`, `App/Motor/MotorLLM.c`, `App/Motor/Transcricao.swift`, `App/Telas/TesteView.swift`.

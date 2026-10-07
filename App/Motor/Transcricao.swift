@@ -64,6 +64,23 @@ enum Transcricao {
         return saida.joined(separator: "\n")
     }
 
+    /// Uma daily inventada, com combinados e pendências claros, para conferir a ata contra o que se sabe.
+    static let daily = """
+    [00:00:03] Eu: Bom dia. Daily rápida. Carla, começa você.
+    [00:00:08] Participantes: Bom dia. Ontem terminei os criativos da campanha de remarketing, são quatro imagens e um vídeo. Hoje subo tudo no gerenciador. Meu impedimento é que ainda não tenho acesso à conta de anúncios nova.
+    [00:00:27] Eu: Eu libero o acesso para você hoje até o meio-dia. Bruno?
+    [00:00:33] Participantes: Ontem a página de captura ficou pronta, mas o formulário não está mandando o lead para a planilha. Hoje eu vejo isso. Acho que é o webhook.
+    [00:00:47] Eu: Isso é prioridade, porque a campanha entra no ar na quinta. Consegue resolver até amanhã?
+    [00:00:55] Participantes: Consigo. Amanhã de manhã eu aviso no grupo se ficou pronto.
+    [00:01:02] Eu: Fechado. Se eu fosse chutar, diria que é a URL antiga do webhook, mas confere. Mais alguma coisa?
+    [00:01:11] Participantes: Só uma dúvida: a verba de teste continua em cinquenta reais por dia?
+    [00:01:17] Eu: Continua em cinquenta por dia até sexta. Na sexta a gente olha os números e decide se aumenta.
+    [00:01:26] Participantes: Ah, e o cliente perguntou se dá para adiantar o relatório mensal.
+    [00:01:32] Eu: Não dá, o relatório sai no dia cinco como sempre. Eu mesmo respondo para ele hoje.
+    [00:01:40] Participantes: Beleza. Vocês viram o jogo ontem? Que vergonha.
+    [00:01:45] Eu: Nem me fala. Então é isso: Carla sobe os criativos hoje, Bruno resolve o formulário até amanhã, e eu libero o acesso e respondo o cliente. Valeu.
+    """
+
     /// Uma conversa curta inventada, para o primeiro teste sem precisar de arquivo.
     static let exemplo = """
     [00:00:05] Eu: Bom, vamos começar. A ideia de hoje é fechar o calendário do lançamento de novembro.

@@ -177,8 +177,11 @@ int ger_llm_gerar(GerLLM *m, const char *sistema, const char *usuario, GerLLMOpc
     // lê o pedido em lotes, avisando o andamento
     for (int32_t i = 0; i < n && resultado == 0; i += 512) {
         int32_t lote = n - i < 512 ? n - i : 512;
-        if (llama_decode(ctx, llama_batch_get_one(tokens + i, lote)) != 0) {
-            anotar(erro, tamErro, "o modelo falhou ao ler o texto (provável falta de memória)");
+        int32_t cod = llama_decode(ctx, llama_batch_get_one(tokens + i, lote));
+        if (cod != 0) {
+            if (erro && tamErro > 0)
+                snprintf(erro, (size_t)tamErro, "o modelo falhou ao ler o texto (código %d do motor, no token %d de %d, contexto %d)",
+                         (int)cod, (int)i, (int)n, contexto);
             resultado = -3; break;
         }
         if (andamento && !andamento((double)(i + lote) / (double)n, usuarioCb)) resultado = 1;
@@ -193,8 +196,10 @@ int ger_llm_gerar(GerLLM *m, const char *sistema, const char *usuario, GerLLMOpc
         int32_t k = llama_token_to_piece(m->vocab, t, peca, (int32_t)sizeof peca, 0, false);
         gerados++;
         if (k > 0 && pedaco && !pedaco(peca, k, usuarioCb)) { resultado = 1; break; }
-        if (llama_decode(ctx, llama_batch_get_one(&t, 1)) != 0) {
-            anotar(erro, tamErro, "o modelo falhou ao gerar (provável falta de memória)");
+        int32_t cod = llama_decode(ctx, llama_batch_get_one(&t, 1));
+        if (cod != 0) {
+            if (erro && tamErro > 0)
+                snprintf(erro, (size_t)tamErro, "o modelo falhou ao escrever (código %d do motor, depois de %d tokens)", (int)cod, gerados);
             resultado = -3; break;
         }
     }

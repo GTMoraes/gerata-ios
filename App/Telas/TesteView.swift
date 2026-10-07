@@ -28,6 +28,9 @@ struct TesteView: View {
         var coube: Int?              // % da transcrição que entrou (modo tudo)
         var menorLivre: UInt64?      // menor folga de memória vista durante o teste
         var loop: Bool?              // parou sozinho porque o modelo entrou em repetição
+        var confirmados: Int?        // combinados e pendências com a frase achada na transcrição
+        var naoConfirmados: Int?
+        var notasCortadas: Int?      // blocos em que a anotação bateu no limite
     }
 
     @AppStorage("modeloEscolhido") private var escolhido = ""
@@ -37,7 +40,8 @@ struct TesteView: View {
     @AppStorage("emAndamento") private var emAndamento = ""
     @AppStorage("ultimaLivre") private var ultimaLivre = 0.0
     @AppStorage("modo") private var modo = "tudo"
-    @AppStorage("comprimido") private var comprimido = false
+    @AppStorage("tipoReuniao") private var tipoReuniao = "Geral"
+    @AppStorage("quemEQuem") private var quemEQuem = ""
     @AppStorage("enxuta") private var enxuta = true
     @AppStorage("nucleosFortes") private var nucleosFortes = false
 
@@ -123,7 +127,7 @@ struct TesteView: View {
                 if !emAndamento.isEmpty {
                     var t = "Estava fazendo: \(emAndamento). "
                     if ultimaLivre > 0 && ultimaLivre < 0.4 {
-                        t += String(format: "A última leitura mostrava só %.2f GB livres: o mais provável é falta de memória. Tente um contexto menor ou o contexto comprimido.", ultimaLivre)
+                        t += String(format: "A última leitura mostrava só %.2f GB livres: o mais provável é falta de memória. Tente um contexto menor.", ultimaLivre)
                     } else if ultimaLivre > 0 {
                         t += String(format: "A última leitura mostrava %.2f GB livres. Se foi você que fechou o app, ignore; se ele fechou sozinho, foi a memória de vídeo: tente um contexto ou um modelo menor.", ultimaLivre)
                     } else {
@@ -131,6 +135,7 @@ struct TesteView: View {
                     }
                     caiu = t; emAndamento = ""
                 }
+                if contexto > 16384 { contexto = 8192 }
                 if let d = UserDefaults.standard.data(forKey: "medicoes"),
                    let l = try? JSONDecoder().decode([Medicao].self, from: d) { medicoes = l }
                 atualizarMemoria()
@@ -224,18 +229,21 @@ struct TesteView: View {
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
                     Button { escolhendoArquivo = true } label: {
-                        Label("Arquivo", systemImage: "folder.fill").frame(maxWidth: .infinity).padding(.vertical, 4)
+                        Label("Arquivo", systemImage: "folder.fill").lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: .infinity).padding(.vertical, 4)
                     }
                     .buttonStyle(.glass)
                     Button {
                         if let s = UIPasteboard.general.string, !s.isEmpty { texto = s; origem = "texto colado" }
                         else { aviso = "Não há texto copiado." }
                     } label: {
-                        Label("Colar", systemImage: "doc.on.clipboard").frame(maxWidth: .infinity).padding(.vertical, 4)
+                        Label("Colar", systemImage: "doc.on.clipboard").lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: .infinity).padding(.vertical, 4)
                     }
                     .buttonStyle(.glass)
-                    Button { texto = Transcricao.exemplo; origem = "texto de exemplo" } label: {
-                        Label("Exemplo", systemImage: "sparkles").frame(maxWidth: .infinity).padding(.vertical, 4)
+                    Menu {
+                        Button("Daily curta") { texto = Transcricao.daily; origem = "daily de exemplo" }
+                        Button("Conversa de lançamento") { texto = Transcricao.exemplo; origem = "texto de exemplo" }
+                    } label: {
+                        Label("Exemplo", systemImage: "sparkles").lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: .infinity).padding(.vertical, 4)
                     }
                     .buttonStyle(.glass)
                 }
@@ -247,17 +255,16 @@ struct TesteView: View {
 
     private var cartaoAjustes: some View {
         Cartao(titulo: "Ajustes do teste", icone: "slider.horizontal.3") {
-            Picker("Modo", selection: $modo) {
-                Text("Tudo de uma vez").tag("tudo")
-                Text("Por blocos").tag("blocos")
+            Picker("Tipo de reunião", selection: $tipoReuniao) {
+                ForEach(Self.tipos, id: \.self) { Text($0).tag($0) }
             }
-            .pickerStyle(.segmented)
+            TextField("Quem é quem e do que se trata (opcional)", text: $quemEQuem, axis: .vertical)
+                .lineLimit(1...3)
+                .padding(10).background(.white.opacity(0.06), in: .rect(cornerRadius: 12))
             Picker("Contexto (quanto texto o modelo lê de uma vez)", selection: $contexto) {
                 Text("4 mil").tag(4096)
                 Text("8 mil").tag(8192)
                 Text("16 mil").tag(16384)
-                Text("24 mil").tag(24576)
-                Text("32 mil").tag(32768)
             }
             Picker("Tamanho máximo da resposta", selection: $maxSaida) {
                 Text("Curta (400)").tag(400)
@@ -266,10 +273,9 @@ struct TesteView: View {
                 Text("Bem longa (2500)").tag(2500)
             }
             Toggle("Rodar na GPU", isOn: $naGPU)
-            Toggle("Contexto comprimido (metade da memória)", isOn: $comprimido)
             Toggle("Transcrição enxuta", isOn: $enxuta)
             Toggle("Só os núcleos fortes (\(max(2, MotorLLM.nucleosFortes)))", isOn: $nucleosFortes)
-            Text("Tudo de uma vez: se a transcrição não couber no contexto, entra só o começo e a medição diz quanto coube. Por blocos: resume trecho a trecho e junta no fim. Enxuta: tira falas inventadas no silêncio e deixa um horário por minuto.")
+            Text("O modelo anota a reunião em blocos e depois escreve a ata. Combinados e pendências só entram se a frase citada existir na transcrição; os outros vão para “Não confirmados”. O tamanho da resposta vale para o resumo final.")
                 .font(.caption).foregroundStyle(Tema.texto2)
         }
     }
@@ -282,7 +288,7 @@ struct TesteView: View {
                 Text(etapa).font(.subheadline)
                 Text("Não feche o GerAta enquanto o teste roda.").font(.caption).foregroundStyle(Tema.texto2)
             } else {
-                BotaoPrincipal(titulo: "Resumir", icone: "play.fill",
+                BotaoPrincipal(titulo: "Gerar ata", icone: "play.fill",
                                desativado: modeloEscolhido == nil || texto.isEmpty, acao: { rodarCom(forcar: false) })
                 if modeloEscolhido == nil {
                     Text("Baixe um modelo e marque-o na lista.").font(.caption).foregroundStyle(Tema.texto2)
@@ -348,25 +354,111 @@ struct TesteView: View {
         if rodando { ultimaLivre = Double(livre) / 1_073_741_824 }
     }
 
-    private static let sistema = "Você escreve atas de reunião em português do Brasil. Use só o que está no texto recebido. Não invente nomes, números, datas nem prazos. Não copie a transcrição: resuma."
+    static let tipos = ["Geral", "Daily", "Reunião de equipe", "Reunião com cliente", "Pitch de vendas",
+                        "Definição de lançamento", "Alinhamento de estratégia"]
 
-    private static func pedidoAta(_ oQue: String) -> String {
+    private static let sistema = "Você faz atas de reunião em português do Brasil. Use só o que está no texto recebido. Não invente nomes, números, datas nem prazos."
+
+    /// Uma linha de anotação que o modelo devolveu: TIPO | [hora] | texto | "frase da transcrição".
+    struct Nota {
+        var tipo: String        // COMBINADO, PENDENCIA, NUMERO, ASSUNTO
+        var hora: String
+        var texto: String
+        var frase: String
+        var confirmada = false
+    }
+
+    /// Minúsculas, sem acento nem pontuação, um espaço entre as palavras: para comparar frases.
+    private static func plano(_ s: String) -> String {
+        let semAcento = s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "pt_BR"))
+        var saida = ""
+        var espaco = true
+        for c in semAcento.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(c) { saida.unicodeScalars.append(c); espaco = false }
+            else if !espaco { saida.append(" "); espaco = true }
+        }
+        return saida.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// A frase citada existe no trecho? Aceita pequenas diferenças: metade das sequências de 4 palavras tem de bater.
+    private static func existe(_ frase: String, em trechoPlano: String) -> Bool {
+        let f = plano(frase)
+        let palavras = f.split(separator: " ").map(String.init)
+        if palavras.count < 3 { return false }
+        if trechoPlano.contains(f) { return true }
+        if palavras.count < 5 { return false }
+        var total = 0
+        var achadas = 0
+        for i in 0...(palavras.count - 4) {
+            total += 1
+            if trechoPlano.contains(palavras[i..<(i + 4)].joined(separator: " ")) { achadas += 1 }
+        }
+        return achadas * 2 >= total
+    }
+
+    private static func lerNotas(_ resposta: String, trecho: String) -> [Nota] {
+        let trechoPlano = plano(trecho)
+        var notas: [Nota] = []
+        for bruta in resposta.split(separator: "\n") {
+            let partes = bruta.split(separator: "|", omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            if partes.count < 3 { continue }
+            let rotulo = plano(partes[0]).uppercased()
+            var tipo = ""
+            if rotulo.contains("COMBINADO") || rotulo.contains("DECISAO") { tipo = "COMBINADO" }
+            else if rotulo.contains("PENDENCIA") { tipo = "PENDENCIA" }
+            else if rotulo.contains("NUMERO") { tipo = "NUMERO" }
+            else if rotulo.contains("ASSUNTO") { tipo = "ASSUNTO" }
+            if tipo.isEmpty { continue }
+            let aspas = CharacterSet(charactersIn: "\"“”'«» ")
+            var n = Nota(tipo: tipo, hora: partes[1].trimmingCharacters(in: CharacterSet(charactersIn: "[] ")),
+                         texto: partes[2], frase: partes.count > 3 ? partes[3].trimmingCharacters(in: aspas) : "")
+            if n.texto.isEmpty { continue }
+            n.confirmada = existe(n.frase, em: trechoPlano)
+            notas.append(n)
+        }
+        return notas
+    }
+
+    private func pedidoNotas(_ trecho: String, _ i: Int, _ total: Int) -> String {
+        var contexto = "Tipo de reunião: \(tipoReuniao)."
+        let q = quemEQuem.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty { contexto += " Contexto informado: \(q)" }
+        return """
+        TRECHO \(i) DE \(total) DA TRANSCRIÇÃO:
+        \(trecho)
+        FIM DO TRECHO.
+
+        \(contexto)
+        Anote o trecho acima em no máximo 10 linhas, agrupando por assunto (não minuto a minuto). Cada linha neste formato exato, com as barras:
+        TIPO | [hora] | o que foi dito, em uma frase | "frase copiada da transcrição"
+
+        TIPO é um destes:
+        COMBINADO = as pessoas concordaram em fazer algo ou fecharam uma decisão nesta reunião.
+        PENDENCIA = alguém ficou de fazer algo depois (diga quem e até quando, se foi dito).
+        NUMERO = valor, métrica, data ou prazo citado.
+        ASSUNTO = todo o resto: explicação, exemplo, hipótese ("se eu fizer", "vamos dizer que"), opinião, história, piada.
+
+        Na dúvida entre COMBINADO e ASSUNTO, use ASSUNTO. A frase entre aspas tem de ser copiada da transcrição, palavra por palavra. Escreva só as linhas.
         """
-        Com base \(oQue) acima, escreva a ata da reunião em português, neste formato:
+    }
+
+    private static func pedidoResumo(_ linhas: String, _ contexto: String) -> String {
+        """
+        ANOTAÇÕES DA REUNIÃO, EM ORDEM:
+        \(linhas)
+        FIM DAS ANOTAÇÕES.
+
+        \(contexto)
+        Com base nas anotações acima, escreva só estas duas seções:
 
         ## Resumo
-        (até 6 linhas)
-
-        ## Decisões
-        (uma por linha, com o horário entre colchetes quando houver)
-
-        ## Pendências
-        (uma por linha: o que, quem e até quando, se foi dito)
+        (até 6 linhas: do que a reunião tratou e o que saiu dela)
 
         ## Assuntos
-        (um por linha, com o horário de início entre colchetes e uma frase sobre o que foi dito)
+        (de 3 a 8 temas, um por linha, no formato "[início–fim] tema: uma frase". Junte anotações do mesmo tema.)
 
-        Omita a seção que não tiver conteúdo. Escreva só a ata.
+        Não escreva decisões nem pendências: elas são tratadas à parte.
         """
     }
 
@@ -394,8 +486,7 @@ struct TesteView: View {
         let sinal = Sinal()
         parar = sinal
         rodando = true; parando = false; resposta = ""; andamento = nil; etapa = "Abrindo o modelo"
-        let porBlocos = modo == "blocos"
-        emAndamento = "\(m.nome), \(porBlocos ? "por blocos" : "tudo de uma vez"), contexto \(contexto)\(comprimido ? " comprimido" : ""), \(naGPU ? "GPU" : "processador")"
+        emAndamento = "\(m.nome), contexto \(contexto), \(naGPU ? "GPU" : "processador")"
         ultimaLivre = Double(Medidor.livre()) / 1_073_741_824
         UIApplication.shared.isIdleTimerDisabled = true
         let arquivo = Modelos.arquivo(m.arquivo)
@@ -405,24 +496,28 @@ struct TesteView: View {
         let ctx = contexto, saida = min(maxSaida, contexto / 2), gpu = naGPU, caracteres = texto.count
         var op = MotorLLM.Opcoes()
         op.contexto = ctx; op.maxSaida = saida; op.naGPU = gpu
-        op.kvComprimido = comprimido; op.nucleosFortes = nucleosFortes; op.forcar = forcar
+        op.nucleosFortes = nucleosFortes; op.forcar = forcar
         let opcoes = op
+        var contextoReuniao = "Tipo de reunião: \(tipoReuniao)."
+        let q = quemEQuem.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty { contextoReuniao += " Contexto informado: \(q)" }
+        let contextoFixo = contextoReuniao
         Task {
             var med = Medicao(modelo: m.nome, naGPU: gpu, contexto: ctx, caracteres: caracteres, tokensEntrada: 0,
                               tokensSaida: 0, cortado: false, segCarregar: 0, segEntrada: 0, segSaida: 0,
                               memoriaModelo: 0, memoriaPico: 0, resultado: "ok")
-            med.modo = porBlocos ? "blocos" : "tudo"
-            med.comprimido = opcoes.kvComprimido; med.enxuta = usarEnxuta
+            med.modo = "blocos"; med.enxuta = usarEnxuta
             var faltouMemoria: String?
             do {
                 let tokens = try await MotorLLM.shared.contar(arquivo: arquivo, naGPU: gpu, linhas: linhas)
                 let fixos = try await MotorLLM.shared.contar(arquivo: arquivo, naGPU: gpu,
-                                                             linhas: [Self.sistema, Self.pedidoAta("na transcrição")])
+                                                             linhas: [Self.sistema, pedidoNotas("", 1, 1)])
                 let reserva = fixos.reduce(0, +) + 160        // instruções + marcadores de conversa + folga
+                let saidaNotas = 700
                 var escrito = ""
 
                 // uma chamada ao modelo, somando tempos e memória na medição
-                func chamar(_ pedido: String, _ o: MotorLLM.Opcoes, _ rotulo: String, mostra: Bool) async throws -> MotorLLM.Resultado {
+                func chamar(_ pedido: String, _ o: MotorLLM.Opcoes, _ rotulo: String) async throws -> MotorLLM.Resultado {
                     let antes = escrito
                     let r = try await MotorLLM.shared.gerar(
                         arquivo: arquivo, sistema: Self.sistema, usuario: pedido, opcoes: o,
@@ -440,51 +535,68 @@ struct TesteView: View {
                     med.memoriaPico = max(med.memoriaPico, r.picoMemoria)
                     med.menorLivre = min(med.menorLivre ?? .max, r.menorLivre)
                     if r.loop { med.loop = true }
-                    if mostra { escrito = antes + r.texto + "\n\n" }
+                    escrito = antes + r.texto + "\n\n"
                     return r
                 }
 
-                if porBlocos {
-                    let limite = max(500, min(6000, ctx - 700 - reserva))
-                    let grupos = agrupar(linhas, tokens, limite: limite, varios: true)
-                    med.blocos = grupos.count
-                    var notas: [String] = []
-                    var oBloco = opcoes
-                    oBloco.maxSaida = 600
-                    var interrompido = false
-                    for (i, g) in grupos.enumerated() {
-                        let pedido = "TRECHO \(i + 1) DE \(grupos.count) DA TRANSCRIÇÃO:\n" + g.joined(separator: "\n")
-                            + "\nFIM DO TRECHO.\n\nAcima está um trecho de uma reunião. Liste em tópicos curtos, com o horário entre colchetes: assuntos tratados, decisões, pendências (o que, quem, até quando), números e datas citados. Só o que está no trecho. Não escreva introdução nem conclusão."
-                        escrito += "— Anotações do bloco \(i + 1) de \(grupos.count) —\n"
-                        let r = try await chamar(pedido, oBloco, "Bloco \(i + 1) de \(grupos.count)", mostra: true)
-                        notas.append(r.texto)
-                        if r.interrompido { interrompido = true; break }
-                    }
-                    if interrompido {
-                        med.resultado = "interrompido"
-                    } else {
-                        // as anotações precisam caber junto com a ata
-                        let juntas = notas.joined(separator: "\n").split(separator: "\n").map(String.init)
-                        let tk = try await MotorLLM.shared.contar(arquivo: arquivo, naGPU: gpu, linhas: juntas)
-                        let cabem = agrupar(juntas, tk, limite: max(300, ctx - saida - reserva), varios: false)
-                        let usadas = cabem.first ?? []
-                        if usadas.count < juntas.count { med.cortado = true }
-                        let pedido = "ANOTAÇÕES DA REUNIÃO, EM ORDEM:\n" + usadas.joined(separator: "\n")
-                            + "\nFIM DAS ANOTAÇÕES.\n\n" + Self.pedidoAta("nas anotações")
-                        escrito += "— Ata —\n"
-                        let r = try await chamar(pedido, opcoes, "Ata", mostra: true)
-                        if r.interrompido { med.resultado = "interrompido" }
-                    }
-                } else {
-                    let cabem = agrupar(linhas, tokens, limite: max(200, ctx - saida - reserva), varios: false)
-                    let usadas = cabem.first ?? []
-                    med.coube = linhas.isEmpty ? 100 : Int((Double(usadas.count) / Double(linhas.count) * 100).rounded())
-                    let pedido = "TRANSCRIÇÃO DA REUNIÃO:\n" + usadas.joined(separator: "\n")
-                        + "\nFIM DA TRANSCRIÇÃO.\n\n" + Self.pedidoAta("na transcrição")
-                    let r = try await chamar(pedido, opcoes, "Ata", mostra: true)
-                    if r.interrompido { med.resultado = "interrompido" }
+                let limite = max(400, min(3000, ctx - saidaNotas - reserva))
+                let grupos = agrupar(linhas, tokens, limite: limite, varios: true)
+                med.blocos = grupos.count
+                var notas: [Nota] = []
+                var brutas = ""
+                var oBloco = opcoes
+                oBloco.maxSaida = saidaNotas
+                var interrompido = false
+                var cortadas = 0
+                for (i, g) in grupos.enumerated() {
+                    let trecho = g.joined(separator: "\n")
+                    escrito += "— Anotações do bloco \(i + 1) de \(grupos.count) —\n"
+                    let r = try await chamar(pedidoNotas(trecho, i + 1, grupos.count), oBloco, "Bloco \(i + 1) de \(grupos.count)")
+                    brutas += "— Bloco \(i + 1) de \(grupos.count) —\n" + r.texto + "\n\n"
+                    notas += Self.lerNotas(r.texto, trecho: trecho)
+                    if Int(r.estat.tokensSaida) >= saidaNotas { cortadas += 1 }
+                    if r.interrompido { interrompido = true; break }
                 }
-                resposta = escrito.trimmingCharacters(in: .whitespacesAndNewlines)
+                med.notasCortadas = cortadas
+                var ata = ""
+                if interrompido {
+                    med.resultado = "interrompido"
+                } else if notas.isEmpty {
+                    med.resultado = "o modelo não seguiu o formato das anotações"
+                } else {
+                    let paraResumo = notas.map { "[\($0.hora)] \($0.tipo): \($0.texto)" }
+                    let tk = try await MotorLLM.shared.contar(arquivo: arquivo, naGPU: gpu, linhas: paraResumo)
+                    let cabem = agrupar(paraResumo, tk, limite: max(300, ctx - saida - 400), varios: false)
+                    let usadas = cabem.first ?? []
+                    if usadas.count < paraResumo.count { med.cortado = true }
+                    escrito += "— Resumo e assuntos —\n"
+                    let r = try await chamar(Self.pedidoResumo(usadas.joined(separator: "\n"), contextoFixo), opcoes, "Resumo")
+                    if r.interrompido { med.resultado = "interrompido" }
+                    ata = r.texto + "\n"
+                }
+                // combinados e pendências: montados pelo app, só com a frase confirmada na transcrição
+                func secao(_ titulo: String, _ itens: [Nota], comFrase: Bool) -> String {
+                    if itens.isEmpty { return "" }
+                    var t = "\n## \(titulo)\n"
+                    for n in itens {
+                        t += "- [\(n.hora)] \(n.texto)"
+                        if comFrase && !n.frase.isEmpty { t += " — “\(n.frase)”" }
+                        t += "\n"
+                    }
+                    return t
+                }
+                let combinados = notas.filter { $0.tipo == "COMBINADO" && $0.confirmada }
+                let pendencias = notas.filter { $0.tipo == "PENDENCIA" && $0.confirmada }
+                let duvidosos = notas.filter { ($0.tipo == "COMBINADO" || $0.tipo == "PENDENCIA") && !$0.confirmada }
+                let numeros = notas.filter { $0.tipo == "NUMERO" }
+                med.confirmados = combinados.count + pendencias.count
+                med.naoConfirmados = duvidosos.count
+                ata += secao("Combinados", combinados, comFrase: true)
+                ata += secao("Pendências", pendencias, comFrase: true)
+                ata += secao("Números citados", numeros, comFrase: false)
+                ata += secao("Não confirmados (a frase citada não foi achada na transcrição)", duvidosos, comFrase: true)
+                resposta = ata.trimmingCharacters(in: .whitespacesAndNewlines)
+                    + "\n\n———— Anotações brutas do modelo (para conferência) ————\n" + brutas.trimmingCharacters(in: .whitespacesAndNewlines)
                 if med.loop == true { med.resultado = "parou sozinho: o modelo entrou em repetição" }
             } catch let e as MotorLLM.ErroMemoria {
                 faltouMemoria = e.texto
@@ -519,6 +631,8 @@ struct TesteView: View {
         s += " · memória em uso: pico \(Medidor.texto(m.memoriaPico))"
         if let l = m.menorLivre, l != .max { s += ", menor folga \(Medidor.texto(l))" }
         if let c = m.coube, c < 100 { s += " · SÓ \(c)% DA TRANSCRIÇÃO COUBE" }
+        if let c = m.confirmados { s += " · combinados/pendências: \(c) confirmados, \(m.naoConfirmados ?? 0) não" }
+        if let n = m.notasCortadas, n > 0 { s += " · \(n) bloco(s) com anotação cortada no limite" }
         if m.cortado { s += " · TEXTO CORTADO (não coube no contexto)" }
         if m.resultado != "ok" { s += " · " + m.resultado }
         return s
