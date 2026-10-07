@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct NovaView: View {
     @Environment(Reunioes.self) private var reunioes
     @Environment(Processo.self) private var processo
+    @Environment(Gravador.self) private var gravador
 
     @AppStorage("trilhaEu") private var trilhaEu = -1          // -1 = ainda não escolhida
     @AppStorage("ultimoTipo") private var tipo = "auto"
@@ -19,6 +20,8 @@ struct NovaView: View {
     @State private var aviso: String?
     @State private var abrir: Reuniao?
     @State private var logado = Nuvem.shared.usuario != nil
+    @State private var link = ""
+    @State private var confirmar: Confirmacao?
 
     private var tipos: [UTType] {
         var t: [UTType] = [.movie, .audio, .plainText, .text]
@@ -39,6 +42,7 @@ struct NovaView: View {
                                 .font(.footnote).foregroundStyle(Tema.texto2)
                         }
                     }
+                    if gravador.disponivel { cartaoLink }
                     cartaoArquivo
                     if let e = entrada, e.trilhas.count >= 2 { cartaoTrilhas(e) }
                     if entrada != nil {
@@ -55,6 +59,11 @@ struct NovaView: View {
             }
             .telaEscura()
             .navigationTitle("GerAta")
+            .confirmar($confirmar)
+            .task { await gravador.conferir(reunioes: reunioes) }
+            .onChange(of: gravador.erro) { _, novo in
+                if let novo { aviso = novo; gravador.erro = nil }
+            }
             .navigationDestination(item: $abrir) { r in
                 ReuniaoView(id: r.id)
             }
@@ -85,6 +94,93 @@ struct NovaView: View {
     }
 
     // MARK: cartões
+
+    private var cartaoLink: some View {
+        Cartao(titulo: "Reunião por link", icone: "link") {
+            Text("Cole o link do Zoom ou do Google Meet. O gravador entra na sala como participante, grava e devolve a transcrição com o nome de quem falou. Pode fechar o app: quem trabalha é a nuvem.")
+                .font(.footnote).foregroundStyle(Tema.texto2)
+            HStack(spacing: 8) {
+                TextField("Link da reunião", text: $link)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    .padding(10).background(.white.opacity(0.06), in: .rect(cornerRadius: 12))
+                Button {
+                    if let s = UIPasteboard.general.string, !s.isEmpty { link = s.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    else { aviso = "Não há link copiado." }
+                } label: {
+                    Image(systemName: "doc.on.clipboard")
+                }
+                .buttonStyle(.glass)
+            }
+            BotaoPrincipal(titulo: gravador.ocupado ? "Chamando o gravador…" : "Mandar o gravador", icone: "record.circle",
+                           desativado: gravador.ocupado || link.trimmingCharacters(in: .whitespaces).isEmpty) {
+                mandarGravador()
+            }
+            Text("No Zoom, use o link inteiro do convite, com o “?pwd=”. Se a sala tiver espera, alguém precisa admitir o gravador.")
+                .font(.caption).foregroundStyle(Tema.texto2)
+            ForEach(gravador.vivas) { g in
+                linhaGravando(g)
+            }
+            if let id = gravador.chegou, let r = reunioes.reuniao(id) {
+                Button {
+                    gravador.chegou = nil
+                    abrir = r
+                } label: {
+                    Label("A transcrição chegou: abrir", systemImage: "checkmark.circle.fill")
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity).padding(.vertical, 4)
+                }
+                .buttonStyle(.glassProminent).tint(Tema.acento)
+            }
+            if !gravador.terminadas.isEmpty {
+                NavigationLink {
+                    GravacoesView()
+                } label: {
+                    Label("Gravações na nuvem (\(gravador.terminadas.count))", systemImage: "cloud")
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity).padding(.vertical, 4)
+                }
+                .buttonStyle(.glass)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func linhaGravando(_ g: Gravacao) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: g.fase == "na_sala" ? "record.circle.fill" : "hourglass")
+                    .foregroundStyle(g.fase == "na_sala" ? Color.red : Tema.acento)
+                Text(g.nomePlataforma + " · " + g.textoDaFase).font(.subheadline.weight(.semibold))
+            }
+            if g.fase != "na_sala" { ProgressView().progressViewStyle(.linear).tint(Tema.acento) }
+            if let d = g.detalhe, !d.isEmpty {
+                Text(d).font(.caption).foregroundStyle(Tema.texto2)
+            }
+            if g.podeSair {
+                Button {
+                    confirmar = Confirmacao(titulo: "Tirar o gravador da reunião?",
+                                            mensagem: "O que já foi gravado é transcrito normalmente.",
+                                            botao: "Sair da conversa", destrutivo: false) {
+                        Task { await gravador.sair(g, reunioes: reunioes) }
+                    }
+                } label: {
+                    Label("Sair da conversa", systemImage: "rectangle.portrait.and.arrow.right")
+                        .frame(maxWidth: .infinity).padding(.vertical, 4)
+                }
+                .buttonStyle(.glass)
+            }
+        }
+        .padding(12)
+        .background(.white.opacity(0.05), in: .rect(cornerRadius: 14))
+    }
+
+    private func mandarGravador() {
+        let l = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            await gravador.entrar(link: l, reunioes: reunioes)
+            if gravador.erro == nil { link = "" }
+        }
+    }
 
     private var cartaoArquivo: some View {
         Cartao(titulo: "Gravação", icone: "waveform") {

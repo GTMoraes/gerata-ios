@@ -46,6 +46,11 @@ struct Reuniao: Codable, Identifiable, Hashable {
     var plano5hVira: Double?
     var planoSemana: Double?
     var planoSemanaVira: Double?
+    // reunião que veio do gravador (link do Zoom/Meet): as falas já trazem o nome real de cada pessoa
+    var comNomes: Bool?
+    var gravacaoID: Int?
+    var meuNome: String?            // como você aparece nesta reunião
+    var qualidade: String?          // "completa" ou "ao_vivo"
 }
 
 /// Saldo do plano do Claude, como a nuvem informa junto de cada ata.
@@ -165,6 +170,11 @@ final class Reunioes {
         try enc.encode(r).write(to: Self.arquivoDados(r.id), options: .atomic)
         if let i = lista.firstIndex(where: { $0.id == r.id }) { lista[i] = r } else { lista.insert(r, at: 0) }
         lista.sort { $0.criada > $1.criada }
+    }
+
+    /// Troca a transcrição de uma reunião que já existe (o gravador refez a transcrição).
+    func regravarTranscricao(_ texto: String, em r: Reuniao) throws {
+        try texto.write(to: Self.arquivoTranscricao(r), atomically: true, encoding: .utf8)
     }
 
     func gravarAta(_ texto: String, em r: Reuniao) throws {
@@ -294,6 +304,22 @@ enum Roteiro {
             t = t.replacingOccurrences(of: padrao, with: " ", options: [.regularExpression, .caseInsensitive])
         }
         return t.split(separator: " ").joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Nomes que aparecem numa transcrição com nomes ("[00:01:20] Fulano: ..."), do que mais fala ao que menos fala.
+    /// "Participante" (quem o gravador não identificou) fica de fora.
+    static func nomes(_ texto: String) -> [String] {
+        var conta: [String: Int] = [:]
+        for bruta in texto.split(separator: "\n") {
+            let l = String(bruta)
+            guard l.hasPrefix("["), let fecha = l.firstIndex(of: "]") else { continue }
+            let resto = l[l.index(after: fecha)...].trimmingCharacters(in: .whitespaces)
+            guard let doisPontos = resto.range(of: ": ") else { continue }
+            let nome = String(resto[resto.startIndex..<doisPontos.lowerBound]).trimmingCharacters(in: .whitespaces)
+            if nome.isEmpty || nome.count > 60 || nome == "Participante" { continue }
+            conta[nome, default: 0] += 1
+        }
+        return conta.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.map { $0.key }
     }
 
     /// Título da ata: a primeira linha "# ...", se houver.

@@ -4,12 +4,14 @@ import SwiftUI
 struct GerAtaApp: App {
     @State private var reunioes = Reunioes()
     @State private var processo = Processo()
+    @State private var gravador = Gravador()
 
     var body: some Scene {
         WindowGroup {
             RaizView()
                 .environment(reunioes)
                 .environment(processo)
+                .environment(gravador)
                 .preferredColorScheme(.dark)
                 .tint(Tema.acento)
         }

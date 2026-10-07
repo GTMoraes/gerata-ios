@@ -35,6 +35,8 @@ GitHub Actions (`.github/workflows/build-ipa.yml`, runner `macos-26`), XcodeGen,
 
 ## Histórico
 
+- **0.3.0:** reunião por link. Cartão na aba Nova para colar o link do Zoom ou do Google Meet; o gravador da nuvem entra na sala, grava e devolve a transcrição com o nome de quem falou (rotas `/api/reuniao*`, feitas em outra conversa: ver `random\Participante-Reuniao\ROTAS-para-o-GerAta.md`). O app acompanha a fase a cada 5 s, tem "Sair da conversa", guarda a transcrição em Resultados quando fica pronta (sem ata) e lista o que está na nuvem, com Refazer e Apagar. Ao gerar a ata dessas reuniões, você marca qual dos nomes é você. Servidor: o pedido ao Claude ganhou a variante para nomes reais (campo `nomes`).
+
 - **0.2.1:** custo da ata e saldo do plano (janela de 5 h e semana, com a hora da virada) no cabeçalho da reunião; cartão "Plano do Claude" em Ajustes. Transcrição só refaz a passada em português se a maior parte da trilha saiu em outro idioma (antes bastava o primeiro trecho, o que dobrava o tempo). Filtro de créditos de legenda inventados ("Legenda Adriana Zanotto"). Tempo decorrido na tela. Resultados virou lista: deslizar para a esquerda apaga, para a direita copia a ata, segurar abre o menu. Ata e Transcrição em caixa com "Ver mais"; na transcrição dá para selecionar trechos. Servidor: `/api/claude/plano` e saída em `stream-json` para ler o `rate_limit_event`.
 
 - **0.2.0:** app refeito. Saiu o modelo de linguagem local (testado até a 0.1.3: um modelo de 4B no iPhone não entende reunião longa e a reunião de 2 h não cabe num contexto só). Entraram a transcrição com duas trilhas, a ata pelo Claude, Resultados, Ajustes e o leitor de Markdown.

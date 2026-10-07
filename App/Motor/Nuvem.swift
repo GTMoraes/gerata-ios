@@ -128,6 +128,7 @@ final class Nuvem: @unchecked Sendable {
         var glossario: String
         var dono: String
         var duasTrilhas: Bool
+        var nomes: Bool = false     // transcrição do gravador: cada fala já vem com o nome real
         var modelo: String          // "opus" ou "sonnet"
     }
 
@@ -136,7 +137,7 @@ final class Nuvem: @unchecked Sendable {
         avisar("Enviando a transcrição para a nuvem")
         let corpo: [String: Any] = ["texto": p.texto, "tipo": p.tipo, "contexto": p.contexto,
                                     "glossario": p.glossario, "dono": p.dono,
-                                    "duas_trilhas": p.duasTrilhas, "modelo": p.modelo]
+                                    "duas_trilhas": p.duasTrilhas, "nomes": p.nomes, "modelo": p.modelo]
         let inicio = try await objeto("api/claude/ata", metodo: "POST", json: corpo)
         guard let id = inicio["job_id"] as? String else { throw ErroApp("A nuvem não aceitou o pedido de ata.") }
         let comeco = Date()
@@ -179,6 +180,118 @@ final class Nuvem: @unchecked Sendable {
                 throw ErroApp("Resposta inesperada da nuvem.")
             }
         }
+    }
+}
+
+// MARK: - gravador de reuniões (entra no Zoom ou no Meet pelo link)
+
+/// Uma reunião gravada pelo "Gravador", como a nuvem informa.
+struct Gravacao: Identifiable, Equatable {
+    var id: Int
+    var plataforma: String          // "zoom" ou "google_meet"
+    var codigo: String
+    var fase: String
+    var detalhe: String?
+    var criado: String?
+    var duracao: Double?
+    var qualidade: String?          // "completa" ou "ao_vivo"
+    var temTexto: Bool
+    var texto: String
+
+    init?(_ d: [String: Any]) {
+        guard let n = (d["id"] as? NSNumber)?.intValue else { return nil }
+        id = n
+        plataforma = d["plataforma"] as? String ?? ""
+        codigo = d["codigo"] as? String ?? ""
+        fase = d["fase"] as? String ?? ""
+        detalhe = d["detalhe"] as? String
+        criado = d["criado"] as? String
+        duracao = (d["duracao"] as? NSNumber)?.doubleValue
+        qualidade = d["qualidade"] as? String
+        temTexto = d["tem_texto"] as? Bool ?? false
+        texto = d["texto"] as? String ?? ""
+    }
+
+    static let fasesVivas = ["acordando", "entrando", "aguardando", "ajuda", "na_sala", "saindo", "transcrevendo"]
+    /// fases em que o gravador ainda está (ou pode estar) na sala
+    static let fasesNaSala = ["acordando", "entrando", "aguardando", "ajuda", "na_sala"]
+
+    var viva: Bool { Self.fasesVivas.contains(fase) }
+    var podeSair: Bool { Self.fasesNaSala.contains(fase) }
+    var terminou: Bool { !viva }
+
+    var nomePlataforma: String { plataforma == "zoom" ? "Zoom" : (plataforma == "google_meet" ? "Google Meet" : "Reunião") }
+
+    var textoDaFase: String {
+        switch fase {
+        case "acordando": return "Acordando a nuvem…"
+        case "entrando": return "Entrando na sala…"
+        case "aguardando": return "Esperando ser admitido na sala"
+        case "ajuda": return "O gravador precisa de ajuda para entrar"
+        case "na_sala": return "Gravando"
+        case "saindo": return "Saindo da sala…"
+        case "transcrevendo": return "Transcrevendo a gravação…"
+        case "pronta": return "Pronta"
+        case "erro": return "Falhou"
+        case "cancelada": return "Cancelada"
+        default: return fase
+        }
+    }
+
+    var quando: Date? {
+        guard let criado else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: criado)
+    }
+}
+
+extension Nuvem {
+    struct EstadoGravador {
+        var pronto: Bool
+        var permitido: Bool
+        var dias: Int
+    }
+
+    func estadoGravador() async throws -> EstadoGravador {
+        let r = try await objeto("api/reuniao/status")
+        return EstadoGravador(pronto: r["pronto"] as? Bool ?? false, permitido: r["permitido"] as? Bool ?? false,
+                              dias: (r["dias"] as? NSNumber)?.intValue ?? 7)
+    }
+
+    private func umaGravacao(_ r: [String: Any]) throws -> Gravacao {
+        guard let g = Gravacao(r) else { throw ErroApp("Resposta inesperada da nuvem sobre a reunião.") }
+        return g
+    }
+
+    func mandarGravador(link: String) async throws -> Gravacao {
+        let r = try await objeto("api/reuniao", metodo: "POST", json: ["link": link])
+        return try umaGravacao(r)
+    }
+
+    func gravacoes() async throws -> [Gravacao] {
+        let r = try await objeto("api/reuniao")
+        let lista = r["reunioes"] as? [[String: Any]] ?? []
+        return lista.compactMap { Gravacao($0) }
+    }
+
+    func gravacao(_ id: Int) async throws -> Gravacao {
+        let r = try await objeto("api/reuniao/\(id)")
+        return try umaGravacao(r)
+    }
+
+    func sairDaReuniao(_ id: Int) async throws -> Gravacao {
+        let r = try await objeto("api/reuniao/\(id)/sair", metodo: "POST", json: [:])
+        return try umaGravacao(r)
+    }
+
+    func refazerGravacao(_ id: Int) async throws -> Gravacao {
+        let r = try await objeto("api/reuniao/\(id)/refazer", metodo: "POST", json: [:])
+        return try umaGravacao(r)
+    }
+
+    func apagarGravacao(_ id: Int) async throws {
+        try await pedir("api/reuniao/\(id)", metodo: "DELETE")
     }
 }
 

@@ -5,6 +5,7 @@ struct ReuniaoView: View {
     let id: String
     @Environment(Reunioes.self) private var reunioes
     @Environment(Processo.self) private var processo
+    @Environment(Gravador.self) private var gravador
     @Environment(\.dismiss) private var fechar
 
     @State private var aba = 0
@@ -21,6 +22,7 @@ struct ReuniaoView: View {
             VStack(spacing: 14) {
                 if let r = reuniao {
                     cabecalho(r)
+                    if r.qualidade == "ao_vivo" { avisoQualidade(r) }
                     if processo.rodando {
                         Cartao {
                             ProgressView().progressViewStyle(.linear).tint(Tema.acento)
@@ -76,7 +78,11 @@ struct ReuniaoView: View {
             if let r = reuniao { GerarDeNovoView(reuniao: r) }
         }
         .onAppear { ler() }
+        .task { if reuniao?.gravacaoID != nil { await gravador.atualizar(reunioes: reunioes) } }
         .onChange(of: reuniao) { _, _ in ler() }
+        .onChange(of: gravador.erro) { _, novo in
+            if let novo { aviso = novo; gravador.erro = nil }
+        }
         .onChange(of: processo.erro) { _, novo in
             if let novo { aviso = novo; processo.erro = nil }
         }
@@ -122,7 +128,7 @@ struct ReuniaoView: View {
     private func linhaDados(_ r: Reuniao) -> String {
         var p = [r.criada.formatted(.dateTime.day().month().year().hour().minute())]
         if let d = formatarDuracao(r.duracao) { p.append(d) }
-        p.append(r.duasTrilhas ? "duas trilhas" : "uma trilha")
+        p.append(r.comNomes == true ? "gravador, com nomes" : (r.duasTrilhas ? "duas trilhas" : "uma trilha"))
         if let t = r.tipoNome { p.append(t) }
         return p.joined(separator: " · ")
     }
@@ -134,6 +140,35 @@ struct ReuniaoView: View {
         if let m = r.modelo { p.append(m) }
         if let e = r.tokensEntrada, let s = r.tokensSaida, e + s > 0 { p.append("\(e) + \(s) tokens") }
         return p.isEmpty ? nil : p.joined(separator: " · ")
+    }
+
+    /// Nas reuniões do gravador, o destaque é o nome que você marcou; nas outras, "Eu".
+    private var destaque: String {
+        guard let r = reuniao else { return "Eu" }
+        return r.comNomes == true ? (r.meuNome ?? "") : "Eu"
+    }
+
+    @ViewBuilder
+    private func avisoQualidade(_ r: Reuniao) -> some View {
+        let g = gravador.lista.first { $0.id == r.gravacaoID }
+        Cartao {
+            Label("Transcrição de reserva", systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(.yellow)
+            Text(g?.detalhe ?? "A nuvem falhou ao transcrever a gravação inteira. Este texto é o do ao vivo e perde trechos.")
+                .font(.footnote).foregroundStyle(Tema.texto2)
+            if let g, g.terminou {
+                Button {
+                    Task { await gravador.refazer(g, reunioes: reunioes) }
+                } label: {
+                    Label("Refazer a transcrição", systemImage: "arrow.clockwise").frame(maxWidth: .infinity).padding(.vertical, 4)
+                }
+                .buttonStyle(.glass)
+            } else if g != nil {
+                Text("Refazendo: " + (g?.textoDaFase ?? "")).font(.caption).foregroundStyle(Tema.texto2)
+            } else {
+                Text("A gravação não está mais na nuvem, então não dá para refazer.").font(.caption).foregroundStyle(Tema.texto2)
+            }
+        }
     }
 
     private func linhaCusto(_ r: Reuniao) -> String? {
@@ -170,7 +205,7 @@ struct ReuniaoView: View {
             if transcricao.isEmpty {
                 Text("Sem transcrição.").font(.subheadline).foregroundStyle(Tema.texto2)
             } else {
-                CaixaTexto(texto: transcricao, altura: 320)
+                CaixaTexto(texto: transcricao, altura: 320, destaque: destaque)
             }
         }
     }
@@ -187,26 +222,62 @@ struct GerarDeNovoView: View {
     @State private var tipo = "auto"
     @State private var contexto = ""
     @State private var modelo = "opus"
+    @State private var nomes: [String] = []
+    @State private var meuNome = ""
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    Cartao(titulo: "Gerar a ata de novo", icone: "arrow.clockwise") {
-                        Text("A transcrição já está guardada, então isso leva cerca de 1 minuto. A ata nova substitui a atual.")
+                    Cartao(titulo: reuniao.temAta == true ? "Gerar a ata de novo" : "Gerar a ata", icone: "sparkles") {
+                        Text(reuniao.temAta == true ? "A transcrição já está guardada, então isso leva cerca de 1 minuto. A ata nova substitui a atual."
+                                                    : "A transcrição já está guardada. A ata leva cerca de 1 minuto e usa o seu plano do Claude.")
                             .font(.footnote).foregroundStyle(Tema.texto2)
                         OpcoesAta(tipo: $tipo, contexto: $contexto, modelo: $modelo)
                     }
+                    if reuniao.comNomes == true {
+                        Cartao(titulo: "Qual destes é você?", icone: "person.crop.circle") {
+                            if nomes.isEmpty {
+                                Text("O gravador não identificou ninguém pelo nome nesta reunião.")
+                                    .font(.footnote).foregroundStyle(Tema.texto2)
+                            }
+                            ForEach(nomes, id: \.self) { n in
+                                Button { meuNome = n } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: meuNome == n ? "largecircle.fill.circle" : "circle")
+                                            .foregroundStyle(Tema.acento)
+                                        Text(n).font(.subheadline).foregroundStyle(.primary)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.vertical, 3)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            Button { meuNome = "" } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: meuNome.isEmpty ? "largecircle.fill.circle" : "circle")
+                                        .foregroundStyle(Tema.acento)
+                                    Text("Nenhum (não participei ou não apareço)").font(.subheadline).foregroundStyle(Tema.texto2)
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.vertical, 3)
+                            }
+                            .buttonStyle(.plain)
+                            Text("Serve para a ata saber quais pendências e combinados são seus.")
+                                .font(.caption).foregroundStyle(Tema.texto2)
+                        }
+                    }
                     BotaoPrincipal(titulo: "Gerar", icone: "sparkles") {
-                        processo.gerarDeNovo(reuniao, Processo.Opcoes(trilhaEu: nil, tipo: tipo, contexto: contexto, modelo: modelo),
-                                             reunioes: reunioes)
+                        var o = Processo.Opcoes(trilhaEu: nil, tipo: tipo, contexto: contexto, modelo: modelo)
+                        if reuniao.comNomes == true { o.meuNome = meuNome }
+                        processo.gerarDeNovo(reuniao, o, reunioes: reunioes)
                         fechar()
                     }
                 }
                 .padding()
             }
             .telaEscura()
-            .navigationTitle("Nova versão")
+            .navigationTitle(reuniao.temAta == true ? "Nova versão" : "Ata")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Cancelar") { fechar() } }
@@ -215,6 +286,12 @@ struct GerarDeNovoView: View {
                 tipo = reuniao.tipoPedido ?? "auto"
                 contexto = reuniao.contexto ?? ""
                 modelo = modeloPadrao
+                if reuniao.comNomes == true {
+                    nomes = Roteiro.nomes(reunioes.transcricao(reuniao) ?? "")
+                    let ultimo = UserDefaults.standard.string(forKey: "ultimoNomeReuniao") ?? ""
+                    if let m = reuniao.meuNome, nomes.contains(m) { meuNome = m }
+                    else if nomes.contains(ultimo) { meuNome = ultimo }
+                }
             }
         }
     }

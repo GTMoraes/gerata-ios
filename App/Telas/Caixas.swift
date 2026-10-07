@@ -50,12 +50,14 @@ struct BotaoVerMais: View {
 struct CaixaTexto: View {
     let texto: String
     var altura: CGFloat = 320
+    /// nome cujas falas ficam em laranja ("Eu", ou como você aparece na reunião)
+    var destaque: String = "Eu"
     @State private var expandido = false
     @State private var alturaTotal: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextoSelecionavel(texto: texto, expandido: expandido, alturaMax: altura, alturaTotal: $alturaTotal)
+            TextoSelecionavel(texto: texto, destaque: destaque, expandido: expandido, alturaMax: altura, alturaTotal: $alturaTotal)
             if alturaTotal > altura + 1 {
                 BotaoVerMais(expandido: $expandido)
             }
@@ -66,11 +68,12 @@ struct CaixaTexto: View {
 
 struct TextoSelecionavel: UIViewRepresentable {
     let texto: String
+    var destaque: String = "Eu"
     let expandido: Bool
     let alturaMax: CGFloat
     @Binding var alturaTotal: CGFloat
 
-    final class Coordinator { var texto = "" }
+    final class Coordinator { var texto = ""; var destaque = "" }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> UITextView {
@@ -88,9 +91,10 @@ struct TextoSelecionavel: UIViewRepresentable {
     }
 
     func updateUIView(_ v: UITextView, context: Context) {
-        if context.coordinator.texto != texto {
+        if context.coordinator.texto != texto || context.coordinator.destaque != destaque {
             context.coordinator.texto = texto
-            v.attributedText = Self.colorido(texto)
+            context.coordinator.destaque = destaque
+            v.attributedText = Self.colorido(texto, destaque: destaque)
         }
         v.isScrollEnabled = !expandido
         if !expandido { v.flashScrollIndicators() }
@@ -105,8 +109,9 @@ struct TextoSelecionavel: UIViewRepresentable {
         return CGSize(width: w, height: expandido ? total : min(total, alturaMax))
     }
 
-    /// As suas falas ("] Eu:") em laranja; o resto na cor normal.
-    static func colorido(_ texto: String) -> NSAttributedString {
+    /// As suas falas ("] Eu:" ou "] Seu Nome:") em laranja; o resto na cor normal.
+    static func colorido(_ texto: String, destaque: String) -> NSAttributedString {
+        let marca = "] " + destaque + ":"
         let fonte = UIFont.preferredFont(forTextStyle: .footnote)
         let paragrafo = NSMutableParagraphStyle()
         paragrafo.paragraphSpacing = 6
@@ -117,7 +122,7 @@ struct TextoSelecionavel: UIViewRepresentable {
         let linhas = texto.components(separatedBy: "\n")
         for (i, linha) in linhas.enumerated() {
             let pedaco = i < linhas.count - 1 ? linha + "\n" : linha
-            saida.append(NSAttributedString(string: pedaco, attributes: linha.contains("] Eu:") ? meu : normal))
+            saida.append(NSAttributedString(string: pedaco, attributes: (!destaque.isEmpty && linha.contains(marca)) ? meu : normal))
         }
         return saida
     }

@@ -20,6 +20,7 @@ final class Processo {
         var tipo: String
         var contexto: String
         var modelo: String
+        var meuNome: String? = nil      // só em reunião do gravador: como você aparece nela
     }
 
     private(set) var rodando = false
@@ -164,16 +165,23 @@ final class Processo {
             throw ErroApp("Não achei a transcrição dessa reunião.")
         }
         let d = UserDefaults.standard
+        let comNomes = r.comNomes == true
+        let dono: String = comNomes ? (o.meuNome ?? "") : (d.string(forKey: "seuNome") ?? "")
         let pedido = Nuvem.PedidoAta(texto: texto, tipo: o.tipo, contexto: o.contexto,
                                      glossario: d.string(forKey: "glossario") ?? "",
-                                     dono: d.string(forKey: "seuNome") ?? "",
-                                     duasTrilhas: r.duasTrilhas, modelo: o.modelo)
+                                     dono: dono,
+                                     duasTrilhas: comNomes ? false : r.duasTrilhas,
+                                     nomes: comNomes, modelo: o.modelo)
         let ata = try await Nuvem.shared.gerarAta(pedido) { m in
             Task { @MainActor in self.atualizar(m, nil) }
         }
         var n = r
         n.tipoPedido = o.tipo
         n.contexto = o.contexto
+        if comNomes {
+            n.meuNome = o.meuNome
+            if let nome = o.meuNome, !nome.isEmpty { d.set(nome, forKey: "ultimoNomeReuniao") }
+        }
         n.tipo = ata.tipo
         n.tipoNome = ata.tipoNome
         n.modelo = ata.modelo
