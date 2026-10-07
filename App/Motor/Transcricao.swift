@@ -24,6 +24,46 @@ enum Transcricao {
         return linhas.joined(separator: "\n")
     }
 
+    /// Falas que o Whisper inventa no silêncio (outro alfabeto, créditos de legenda).
+    static func inventada(_ fala: String) -> Bool {
+        for u in fala.unicodeScalars {
+            let v = u.value
+            if (0x0400...0x052F).contains(v) || (0x0590...0x06FF).contains(v) || (0x3040...0x9FFF).contains(v)
+                || (0xAC00...0xD7AF).contains(v) { return true }
+        }
+        let b = fala.lowercased()
+        return b.contains("amara.org") || b.contains("legendas pela comunidade")
+    }
+
+    /// Versão enxuta para o modelo: sem falas inventadas nem repetidas em seguida, e um horário por minuto.
+    static func enxugar(_ texto: String) -> String {
+        var saida: [String] = []
+        var minuto = ""
+        var anterior = ""
+        for bruta in texto.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n") {
+            let l = bruta.trimmingCharacters(in: .whitespaces)
+            if l.isEmpty { continue }
+            var hora = ""
+            var fala = l
+            let c = Array(l)
+            if c.count > 10 && c[0] == "[" && c[3] == ":" && c[6] == ":" && c[9] == "]" {
+                hora = String(c[1...5])
+                fala = String(c[10...]).trimmingCharacters(in: .whitespaces)
+            }
+            if fala.isEmpty || inventada(fala) || fala == anterior { continue }
+            anterior = fala
+            if hora.isEmpty {
+                saida.append(fala)
+            } else if hora != minuto || saida.isEmpty {
+                minuto = hora
+                saida.append("[\(hora)] \(fala)")
+            } else {
+                saida[saida.count - 1] += " " + fala
+            }
+        }
+        return saida.joined(separator: "\n")
+    }
+
     /// Uma conversa curta inventada, para o primeiro teste sem precisar de arquivo.
     static let exemplo = """
     [00:00:05] Eu: Bom, vamos começar. A ideia de hoje é fechar o calendário do lançamento de novembro.

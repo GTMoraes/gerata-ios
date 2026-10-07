@@ -60,6 +60,23 @@ App/Telas/Tema.swift                tema e confirmações (vindos do Estúdio)
   formato não for reconhecido, cai em ChatML.
 - Texto que não cabe no contexto é cortado no fim e a medição marca "TEXTO CORTADO". Na etapa 3 a
   reunião longa será resumida em blocos de tempo e consolidada.
-- O ícone é o do Estúdio por enquanto.
+- Ícone próprio desde a 0.1.1 (uma ata com itens marcados), desenhado por `icone.py` fora do repositório.
 - Dentro do LiveContainer o limite de memória é o do próprio LiveContainer, não o de um app
   instalado direto. É uma das coisas que esta etapa mede.
+
+## 0.1.2
+
+O teste com a reunião de 2 h na 0.1.0 mostrou o modelo copiando a transcrição e entrando em repetição. Causa: o texto não cabia no contexto, era cortado no fim e a instrução ficava lá no começo. Mudou:
+
+- A instrução vai **depois** da transcrição; quando não cabe, corta-se a transcrição (a medição diz quanto coube), nunca a instrução.
+- Penalidade de repetição leve (1,1) e detector de repetição, que para sozinho.
+- **Transcrição enxuta** (ligada por padrão): tira falas que o Whisper inventa no silêncio (outro alfabeto, créditos de legenda), tira repetidas em seguida e deixa um horário por minuto.
+- Dois modos: **Tudo de uma vez** e **Por blocos** (anota trecho a trecho, depois escreve a ata das anotações).
+- Contexto de 24 mil, **contexto comprimido** (8 bits, metade da memória), opção de usar só os núcleos fortes, resposta de até 2500.
+- Antes de rodar, o app faz a conta de memória e pergunta se não fechar ("Rodar mesmo assim").
+- Barra fixa embaixo com o andamento, a memória ao vivo e o botão **Parar**.
+- Medição mostra a menor folga de memória vista. O arquivo do modelo não entra em "em uso" (o iOS o conta à parte); ele aparece como queda nos livres.
+- Aviso de app encerrado não culpa mais a memória sem evidência.
+- Ícone novo (era da 0.1.1).
+
+Arquivos: `project.yml`, `LEIA-ME.md`, `App/Motor/MotorLLM.h`, `MotorLLM.c`, `MotorLLM.swift`, `Transcricao.swift`, `App/Telas/TesteView.swift`, `App/Assets.xcassets/AppIcon.appiconset/icone.png`.

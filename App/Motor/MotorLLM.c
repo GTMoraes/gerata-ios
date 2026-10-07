@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <sys/types.h>
+#include <sys/sysctl.h>
 
 #if __has_include(<llama/llama.h>)
 #include <llama/llama.h>
@@ -54,6 +56,31 @@ void ger_llm_info(GerLLM *m, char *descricao, int tam, int *contextoTreino, uint
     if (bytes) *bytes = llama_model_size(m->modelo);
 }
 
+int ger_llm_tokens(GerLLM *m, const char *texto) {
+    if (!m || !texto) return -1;
+    int32_t n = llama_tokenize(m->vocab, texto, (int32_t)strlen(texto), NULL, 0, false, false);
+    return n < 0 ? -n : n;
+}
+
+uint64_t ger_llm_memoria_contexto(GerLLM *m, int contexto, int kvComprimido) {
+    if (!m || contexto <= 0) return 0;
+    int64_t camadas = llama_model_n_layer(m->modelo);
+    int64_t largura = llama_model_n_embd(m->modelo);
+    int64_t cabecas = llama_model_n_head(m->modelo);
+    int64_t cabecasKV = llama_model_n_head_kv(m->modelo);
+    if (camadas <= 0 || largura <= 0) return 0;
+    if (cabecas <= 0 || cabecasKV <= 0) { cabecas = 1; cabecasKV = 1; }
+    int64_t porToken = camadas * 2 * (largura / cabecas) * cabecasKV;   // valores de K e V por token
+    double bytesPorValor = kvComprimido ? 1.0625 : 2.0;                 // q8_0 ou meia precisão
+    return (uint64_t)((double)porToken * (double)contexto * bytesPorValor);
+}
+
+int ger_llm_nucleos_fortes(void) {
+    int n = 0; size_t t = sizeof n;
+    if (sysctlbyname("hw.perflevel0.physicalcpu", &n, &t, NULL, 0) != 0) return 0;
+    return n;
+}
+
 /// Monta o pedido no formato de conversa do próprio modelo; sem formato conhecido, usa ChatML.
 static char *montarPedido(GerLLM *m, const char *sistema, const char *usuario) {
     const char *molde = llama_model_chat_template(m->modelo, NULL);
@@ -85,12 +112,13 @@ static char *montarPedido(GerLLM *m, const char *sistema, const char *usuario) {
     return buf;
 }
 
-int ger_llm_gerar(GerLLM *m, const char *sistema, const char *usuario,
-                  int contexto, int maxSaida, float temperatura,
+int ger_llm_gerar(GerLLM *m, const char *sistema, const char *usuario, GerLLMOpcoes op,
                   GerLLMAndamento andamento, GerLLMPedaco pedaco, void *usuarioCb,
                   GerLLMEstat *estat, char *erro, int tamErro) {
     if (estat) memset(estat, 0, sizeof *estat);
     if (!m || !usuario) { anotar(erro, tamErro, "pedido vazio"); return -1; }
+    int contexto = op.contexto, maxSaida = op.maxSaida;
+    float temperatura = op.temperatura;
     if (contexto < 1024) contexto = 1024;
     if (maxSaida < 16) maxSaida = 16;
     if (maxSaida > contexto / 2) maxSaida = contexto / 2;
@@ -122,10 +150,19 @@ int ger_llm_gerar(GerLLM *m, const char *sistema, const char *usuario,
     cp.n_ctx = (uint32_t)contexto;
     cp.n_batch = 512;
     cp.no_perf = true;
+    if (op.threads > 0) { cp.n_threads = op.threads; cp.n_threads_batch = op.threads; }
+    if (op.kvComprimido) {
+        cp.type_k = GGML_TYPE_Q8_0; cp.type_v = GGML_TYPE_Q8_0;
+        cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;   // o contexto comprimido depende disso
+    }
     struct llama_context *ctx = llama_init_from_model(m->modelo, cp);
-    if (!ctx) { free(tokens); anotar(erro, tamErro, "faltou memória para um contexto desse tamanho: tente um contexto menor"); return -2; }
+    if (!ctx) { free(tokens); anotar(erro, tamErro, op.kvComprimido
+        ? "não consegui criar o contexto comprimido (falta de memória, ou esta versão do motor não aceita): tente sem comprimir ou com um contexto menor"
+        : "faltou memória para um contexto desse tamanho: tente um contexto menor"); return -2; }
 
     struct llama_sampler *amostra = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    if (op.penalidade > 1.001f)
+        llama_sampler_chain_add(amostra, llama_sampler_init_penalties(llama_vocab_n_tokens(m->vocab), 256, op.penalidade, 0.0f, 0.0f));
     if (temperatura <= 0.01f) {
         llama_sampler_chain_add(amostra, llama_sampler_init_greedy());
     } else {
