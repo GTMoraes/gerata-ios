@@ -35,6 +35,8 @@ GitHub Actions (`.github/workflows/build-ipa.yml`, runner `macos-26`), XcodeGen,
 
 ## Histórico
 
+- **0.2.1:** custo da ata e saldo do plano (janela de 5 h e semana, com a hora da virada) no cabeçalho da reunião; cartão "Plano do Claude" em Ajustes. Transcrição só refaz a passada em português se a maior parte da trilha saiu em outro idioma (antes bastava o primeiro trecho, o que dobrava o tempo). Filtro de créditos de legenda inventados ("Legenda Adriana Zanotto"). Tempo decorrido na tela. Resultados virou lista: deslizar para a esquerda apaga, para a direita copia a ata, segurar abre o menu. Ata e Transcrição em caixa com "Ver mais"; na transcrição dá para selecionar trechos. Servidor: `/api/claude/plano` e saída em `stream-json` para ler o `rate_limit_event`.
+
 - **0.2.0:** app refeito. Saiu o modelo de linguagem local (testado até a 0.1.3: um modelo de 4B no iPhone não entende reunião longa e a reunião de 2 h não cabe num contexto só). Entraram a transcrição com duas trilhas, a ata pelo Claude, Resultados, Ajustes e o leitor de Markdown.
 - **0.1.0 a 0.1.3:** tela de medição com modelo local (llama.cpp).
 

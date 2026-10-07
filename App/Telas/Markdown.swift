@@ -49,7 +49,7 @@ struct MarkdownView: View {
     }
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(blocos) { b in
                 linha(b)
             }

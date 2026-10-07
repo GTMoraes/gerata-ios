@@ -19,12 +19,15 @@ struct AjustesView: View {
     @State private var preparoFracao: Double?
     @State private var tamanhoModelo: Int64 = 0
     @State private var tamanhoReunioes: Int64 = 0
+    @State private var plano: Plano?
+    @State private var consultandoPlano = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
                     cartaoNuvem
+                    if logado != nil { cartaoPlano }
                     cartaoVoce
                     cartaoGlossario
                     cartaoTranscricao
@@ -42,6 +45,7 @@ struct AjustesView: View {
             } message: { Text(aviso ?? "") }
             .onAppear {
                 logado = Nuvem.shared.usuario
+                plano = Plano.ultimo()
                 medir()
                 if logado != nil { conferirClaude() }
             }
@@ -81,6 +85,47 @@ struct AjustesView: View {
                     entrar()
                 }
             }
+        }
+    }
+
+    // MARK: plano
+
+    private var cartaoPlano: some View {
+        Cartao(titulo: "Plano do Claude", icone: "gauge.with.dots.needle.50percent") {
+            if let p = plano {
+                if let l = Plano.linha(p.cincoHoras, p.cincoHorasVira, comDia: false) {
+                    Text("Janela de 5 h: " + l).font(.subheadline.monospacedDigit())
+                }
+                if let l = Plano.linha(p.semana, p.semanaVira, comDia: true) {
+                    Text("Semana: " + l).font(.subheadline.monospacedDigit())
+                }
+                let quando: String = p.visto.formatted(.dateTime.day().month().hour().minute())
+                Text("Visto em " + quando + ". É o uso da conta inteira, não só do GerAta.")
+                    .font(.caption).foregroundStyle(Tema.texto2)
+            } else {
+                Text("Ainda sem leitura. O saldo chega junto de cada ata, ou toque em Atualizar.")
+                    .font(.footnote).foregroundStyle(Tema.texto2)
+            }
+            Button { atualizarPlano() } label: {
+                Label(consultandoPlano ? "Consultando…" : "Atualizar", systemImage: "arrow.clockwise")
+                    .frame(maxWidth: .infinity).padding(.vertical, 4)
+            }
+            .buttonStyle(.glass)
+            .disabled(consultandoPlano || processo.rodando)
+            Text("Atualizar faz uma chamada mínima ao Claude (cerca de 1 centavo de dólar equivalente).")
+                .font(.caption).foregroundStyle(Tema.texto2)
+        }
+    }
+
+    private func atualizarPlano() {
+        consultandoPlano = true
+        Task {
+            do {
+                plano = try await Nuvem.shared.consultarPlano()
+            } catch {
+                aviso = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+            consultandoPlano = false
         }
     }
 

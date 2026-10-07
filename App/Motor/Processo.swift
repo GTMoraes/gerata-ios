@@ -25,6 +25,8 @@ final class Processo {
     private(set) var rodando = false
     private(set) var etapa = ""
     private(set) var fracao: Double?
+    /// quando o trabalho atual começou (para mostrar o tempo decorrido)
+    private(set) var comecouEm: Date?
     var erro: String?
     /// reunião que acabou de ficar pronta (a tela abre e depois limpa)
     var pronta: Reuniao?
@@ -37,12 +39,12 @@ final class Processo {
     }
 
     private func comecar() {
-        rodando = true; erro = nil; pronta = nil; etapa = "Preparando"; fracao = nil
+        rodando = true; erro = nil; pronta = nil; etapa = "Preparando"; fracao = nil; comecouEm = Date()
         UIApplication.shared.isIdleTimerDisabled = true
     }
 
     private func terminar() {
-        rodando = false; tarefa = nil; etapa = ""; fracao = nil
+        rodando = false; tarefa = nil; etapa = ""; fracao = nil; comecouEm = nil
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
@@ -179,6 +181,11 @@ final class Processo {
         n.tokensEntrada = ata.tokensEntrada
         n.tokensSaida = ata.tokensSaida
         n.custo = ata.custo
+        if let p = ata.plano {
+            n.plano5h = p.cincoHoras; n.plano5hVira = p.cincoHorasVira
+            n.planoSemana = p.semana; n.planoSemanaVira = p.semanaVira
+            Plano.guardar(p)
+        }
         n.temAta = true
         n.erroAta = nil
         if let t = Roteiro.titulo(daAta: ata.texto) { n.titulo = t }

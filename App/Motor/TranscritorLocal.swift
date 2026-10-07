@@ -139,9 +139,10 @@ actor TranscritorLocal {
             opcoes.language = nil
         }
         // o progresso do WhisperKit é um Progress; lido a cada meio segundo
+        let rotulo = Rotulo("Transcrevendo no iPhone")
         let acompanhar = Task {
             while !Task.isCancelled {
-                avisar("Transcrevendo no iPhone", w.progress.fractionCompleted)
+                avisar(rotulo.texto, w.progress.fractionCompleted)
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }
         }
@@ -156,9 +157,23 @@ actor TranscritorLocal {
             }
         }
         var resultados = try await w.transcribe(audioPath: audio.path, decodeOptions: opcoes)
-        if let idioma, let achado = resultados.first?.language, !achado.isEmpty, achado != idioma {
-            // o modelo "detectou" outro idioma: vale o que você escolheu
-            avisar("Transcrevendo no iPhone", nil)
+        // GerAta: só refaz a passada inteira se a MAIOR PARTE do texto saiu em outro idioma. (No Estúdio
+        // bastava o primeiro trecho; numa trilha de reunião que começa em silêncio isso dobrava o tempo.)
+        var foraDoIdioma = false
+        if let idioma {
+            var total = 0
+            var certos = 0
+            for r in resultados {
+                let n = r.segments.reduce(0) { $0 + $1.text.count }
+                total += n
+                if r.language == idioma { certos += n }
+            }
+            foraDoIdioma = total > 0 && certos * 2 < total
+        }
+        if foraDoIdioma {
+            // o modelo "detectou" outro idioma na maior parte: vale o que você escolheu
+            rotulo.texto = "Refazendo em português (2ª passada)"
+            avisar(rotulo.texto, nil)
             resultados = try await w.transcribe(audioPath: audio.path, decodeOptions: fixo)
             opcoes = fixo
         }
@@ -353,6 +368,12 @@ actor TranscritorLocal {
             return n
         }
     }
+}
+
+/// Texto do andamento, trocado entre a 1ª e a 2ª passada.
+final class Rotulo: @unchecked Sendable {
+    var texto: String
+    init(_ t: String) { texto = t }
 }
 
 enum AudioUtil {

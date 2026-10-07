@@ -109,6 +109,16 @@ final class Nuvem: @unchecked Sendable {
         var tokensSaida: Int
         var custo: Double?
         var modelo: String
+        var plano: Plano?
+    }
+
+    /// Saldo do plano agora (faz uma chamada mínima ao Claude).
+    func consultarPlano() async throws -> Plano {
+        let r = try await objeto("api/claude/plano", metodo: "POST", json: [:])
+        guard let d = r["plano"] as? [String: Any] else { throw ErroApp("A nuvem não informou o saldo do plano.") }
+        let p = Plano(d)
+        Plano.guardar(p)
+        return p
     }
 
     struct PedidoAta {
@@ -159,8 +169,9 @@ final class Nuvem: @unchecked Sendable {
                            segundos: r["segundos"] as? Double ?? Double(passou),
                            tokensEntrada: r["tokens_entrada"] as? Int ?? 0,
                            tokensSaida: r["tokens_saida"] as? Int ?? 0,
-                           custo: r["custo"] as? Double,
-                           modelo: r["modelo"] as? String ?? p.modelo)
+                           custo: (r["custo"] as? NSNumber)?.doubleValue,
+                           modelo: r["modelo"] as? String ?? p.modelo,
+                           plano: (r["plano"] as? [String: Any]).map { Plano($0) })
             case "error":
                 let e = r["erro"] as? String ?? "erro desconhecido"
                 throw ErroApp("A ata falhou: " + e)

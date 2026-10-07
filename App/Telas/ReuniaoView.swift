@@ -9,7 +9,7 @@ struct ReuniaoView: View {
 
     @State private var aba = 0
     @State private var ata = ""
-    @State private var transcricao: [String] = []
+    @State private var transcricao = ""
     @State private var confirmar: Confirmacao?
     @State private var aviso: String?
     @State private var pedindoDeNovo = false
@@ -85,7 +85,7 @@ struct ReuniaoView: View {
     private func ler() {
         guard let r = reuniao else { return }
         ata = reunioes.ata(r) ?? ""
-        transcricao = (reunioes.transcricao(r) ?? "").split(separator: "\n").map(String.init)
+        transcricao = reunioes.transcricao(r) ?? ""
     }
 
     private func copiar() {
@@ -103,6 +103,18 @@ struct ReuniaoView: View {
             }
             if let m = linhaMedidas(r) {
                 Text(m).font(.caption2.monospacedDigit()).foregroundStyle(Tema.texto2)
+            }
+            if let c = linhaCusto(r) {
+                Text(c).font(.caption2.monospacedDigit()).foregroundStyle(Tema.texto2)
+            }
+            if let p = Plano.linha(r.plano5h, r.plano5hVira, comDia: false) {
+                Text("Plano, janela de 5 h: " + p).font(.caption2.monospacedDigit()).foregroundStyle(Tema.texto2)
+            }
+            if let p = Plano.linha(r.planoSemana, r.planoSemanaVira, comDia: true) {
+                Text("Plano, semana: " + p).font(.caption2.monospacedDigit()).foregroundStyle(Tema.texto2)
+            }
+            if r.plano5h != nil || r.planoSemana != nil {
+                Text("Saldo do plano no momento em que esta ata foi gerada.").font(.caption2).foregroundStyle(Tema.texto2)
             }
         }
     }
@@ -124,6 +136,11 @@ struct ReuniaoView: View {
         return p.isEmpty ? nil : p.joined(separator: " · ")
     }
 
+    private func linhaCusto(_ r: Reuniao) -> String? {
+        guard let c = r.custo, c > 0 else { return nil }
+        return String(format: "Custo desta ata: US$ %.2f (equivalente; no plano não é cobrado à parte)", c)
+    }
+
     @ViewBuilder
     private func cartaoAta(_ r: Reuniao) -> some View {
         Cartao {
@@ -138,24 +155,23 @@ struct ReuniaoView: View {
                     pedindoDeNovo = true
                 }
             } else {
-                MarkdownView(texto: ata)
+                CaixaExpansivel(altura: alturaAta) {
+                    MarkdownView(texto: ata)
+                }
             }
         }
     }
+
+    /// A ata ocupa cerca de metade da tela; "Ver mais" abre inteira.
+    private var alturaAta: CGFloat { max(320, UIScreen.main.bounds.height * 0.5) }
 
     private var cartaoTranscricao: some View {
         Cartao {
             if transcricao.isEmpty {
                 Text("Sem transcrição.").font(.subheadline).foregroundStyle(Tema.texto2)
+            } else {
+                CaixaTexto(texto: transcricao, altura: 320)
             }
-            LazyVStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(transcricao.enumerated()), id: \.offset) { _, linha in
-                    Text(linha).font(.footnote)
-                        .foregroundStyle(linha.contains("] Eu:") ? Tema.acento : .primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .textSelection(.enabled)
         }
     }
 }

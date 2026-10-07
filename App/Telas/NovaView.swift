@@ -152,7 +152,14 @@ struct NovaView: View {
                 if let f = processo.fracao { ProgressView(value: min(1, max(0, f))).tint(Tema.acento) }
                 else { ProgressView().progressViewStyle(.linear).tint(Tema.acento) }
                 Text(processo.etapa).font(.subheadline)
-                Text("Deixe o GerAta aberto na tela até terminar.").font(.caption).foregroundStyle(Tema.texto2)
+                if let inicio = processo.comecouEm {
+                    TimelineView(.periodic(from: inicio, by: 1)) { c in
+                        Text("Tempo decorrido: " + relogio(c.date.timeIntervalSince(inicio)))
+                            .font(.caption.monospacedDigit()).foregroundStyle(Tema.texto2)
+                    }
+                }
+                Text("Deixe o GerAta aberto na tela até terminar. A barra recomeça a cada passada e a cada trecho conferido.")
+                    .font(.caption).foregroundStyle(Tema.texto2)
                 Button { processo.parar() } label: {
                     Label("Parar", systemImage: "stop.fill").frame(maxWidth: .infinity).padding(.vertical, 4)
                 }
@@ -201,11 +208,17 @@ struct NovaView: View {
         default: p.append("\(e.trilhas.count) trilhas de áudio")
         }
         if let d = e.duracao, d > 0 {
-            // medido no Estúdio: 2 h em cerca de 8 min, por trilha
-            let minutos = max(1, Int((d / 15 * Double(max(1, min(2, e.trilhas.count))) / 60).rounded()))
-            p.append("transcrição estimada em \(minutos) min")
+            // medido no GerAta 0.2.0: 2 h com duas trilhas em 28m46s (cerca de 14 min por trilha de 2 h)
+            let minutos = max(1, Int((d / 8.3 * Double(max(1, min(2, e.trilhas.count))) / 60).rounded()))
+            p.append("transcrição: até uns \(minutos) min")
         }
         return p.joined(separator: " · ")
+    }
+
+    private func relogio(_ s: TimeInterval) -> String {
+        let t = Int(max(0, s))
+        return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, t % 3600 / 60, t % 60)
+                         : String(format: "%d:%02d", t / 60, t % 60)
     }
 
     private func limpar() {

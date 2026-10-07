@@ -41,6 +41,57 @@ struct Reuniao: Codable, Identifiable, Hashable {
     var custo: Double?
     var temAta: Bool?
     var erroAta: String?
+    // saldo do plano no momento em que a ata foi gerada (0 a 1) e quando cada janela vira (segundos desde 1970)
+    var plano5h: Double?
+    var plano5hVira: Double?
+    var planoSemana: Double?
+    var planoSemanaVira: Double?
+}
+
+/// Saldo do plano do Claude, como a nuvem informa junto de cada ata.
+struct Plano: Codable, Equatable {
+    var cincoHoras: Double?
+    var cincoHorasVira: Double?
+    var semana: Double?
+    var semanaVira: Double?
+    var visto: Date = Date()
+
+    init(_ d: [String: Any]) {
+        if let j = d["cinco_horas"] as? [String: Any] {
+            cincoHoras = (j["uso"] as? NSNumber)?.doubleValue
+            cincoHorasVira = (j["vira"] as? NSNumber)?.doubleValue
+        }
+        if let j = d["semana"] as? [String: Any] {
+            semana = (j["uso"] as? NSNumber)?.doubleValue
+            semanaVira = (j["vira"] as? NSNumber)?.doubleValue
+        }
+    }
+
+    /// "53% usado · vira às 03:50"
+    static func linha(_ uso: Double?, _ vira: Double?, comDia: Bool) -> String? {
+        guard let uso else { return nil }
+        var t = "\(Int((uso * 100).rounded()))% usado"
+        if let vira, vira > 0 {
+            let d = Date(timeIntervalSince1970: vira)
+            if comDia {
+                let quando: String = d.formatted(.dateTime.weekday(.abbreviated).day().month().hour().minute())
+                t += " · vira " + quando
+            } else {
+                let quando: String = d.formatted(.dateTime.hour().minute())
+                t += " · vira às " + quando
+            }
+        }
+        return t
+    }
+
+    // o último saldo visto fica guardado para o cartão de Ajustes
+    static func guardar(_ p: Plano) {
+        if let d = try? JSONEncoder().encode(p) { UserDefaults.standard.set(d, forKey: "ultimoPlano") }
+    }
+    static func ultimo() -> Plano? {
+        guard let d = UserDefaults.standard.data(forKey: "ultimoPlano") else { return nil }
+        return try? JSONDecoder().decode(Plano.self, from: d)
+    }
 }
 
 @MainActor
@@ -157,7 +208,7 @@ enum Roteiro {
     static func falas(_ segmentos: [Segmento], quem: String) -> [Fala] {
         var saida: [Fala] = []
         for s in segmentos {
-            let t = s.texto.trimmingCharacters(in: .whitespacesAndNewlines)
+            let t = semCreditos(s.texto)
             if t.isEmpty || inventada(t) { continue }
             if var u = saida.last, s.inicio - u.fim < 2.0, u.texto.count + t.count < 350 {
                 u.texto += " " + t
@@ -226,6 +277,23 @@ enum Roteiro {
         if letras > 0 && deFora * 2 > letras { return true }
         let b = fala.lowercased()
         return b.contains("amara.org") || b.contains("legendas pela comunidade")
+    }
+
+    /// Créditos de legenda que o Whisper solta no silêncio ("Legenda Adriana Zanotto", "Legendas pela
+    /// comunidade Amara.org"), sozinhos ou grudados numa fala de verdade. Só frases que são crédito com certeza.
+    static let creditos = [
+        "legendas? (por |de |da |pela comunidade )?adriana zanotto",
+        "legendas? pela comunidade( d[aeo])? amara\\.org",
+        "legendas? pela comunidade",
+        "amara\\.org",
+    ]
+
+    static func semCreditos(_ texto: String) -> String {
+        var t = texto
+        for padrao in creditos {
+            t = t.replacingOccurrences(of: padrao, with: " ", options: [.regularExpression, .caseInsensitive])
+        }
+        return t.split(separator: " ").joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Título da ata: a primeira linha "# ...", se houver.
