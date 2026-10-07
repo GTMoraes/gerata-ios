@@ -4,11 +4,17 @@ options:
   deploymentTarget:
     iOS: "26.0"
   createIntermediateGroups: true
+packages:
+  Argmax:
+    url: https://github.com/argmaxinc/argmax-oss-swift
+    # = tag v1.1.0, o mesmo commit do Estúdio. Fixado por commit: o pacote usa unsafeFlags e o
+    # SwiftPM recusa isso em dependências resolvidas por versão.
+    revision: 1e2a163736dfa5a198e637ae44c114e1c6d5cc2d
 settings:
   base:
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
-    MARKETING_VERSION: "0.1.3"
+    MARKETING_VERSION: "0.2.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGNING_ALLOWED: "NO"
     CODE_SIGNING_REQUIRED: "NO"
@@ -22,9 +28,9 @@ targets:
     sources:
       - App
     dependencies:
-      # llama.cpp pronto para iPhone, baixado por scripts/baixar-llama.sh
-      - framework: vendor-llm/llama.xcframework
-        embed: true
+      # transcrição no iPhone (Whisper no Neural Engine), a mesma do Estúdio
+      - package: Argmax
+        product: WhisperKit
     info:
       path: App/Info.plist
       properties:
@@ -43,7 +49,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gtm.gerata
-        SWIFT_OBJC_BRIDGING_HEADER: App/Motor/GerAta-Bridging-Header.h
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     scheme: {}
